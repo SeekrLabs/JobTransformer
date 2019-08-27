@@ -1,0 +1,84 @@
+service: jobstransformer
+package:
+  exclude:
+    - node_modules/**
+    - tst/**
+    - analytics/**
+
+provider:
+  name: aws
+  runtime: python3.6
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - sqs:ReceiveMessage
+        - sqs:GetQueueUrl
+        - es:ESHttpPut
+      Resource:
+        -         
+          Fn::Join:
+          - ':'
+          - - 'arn:aws:sqs'
+            - !Ref 'AWS::Region'
+            - !Ref 'AWS::AccountId'
+            - 'JobsIngestionQueue'
+
+functions:
+  transformer:
+    handler: handler.no_transform
+    memory: 128
+    timeout: 30
+    events:
+      - sqs:
+          arn:
+            Fn::Join:
+            - ':'
+            - - 'arn:aws:sqs'
+              - !Ref 'AWS::Region'
+              - !Ref 'AWS::AccountId'
+              - 'JobsIngestionQueue'
+    environment:
+      DOMAIN_ENDPOINT:
+        Fn::GetAtt:
+          - "JobsDatabase"
+          - "DomainEndpoint"
+      DOMAIN_INDEX: 'jobs'
+
+        
+resources:
+  Resources:
+    JobsDatabase:
+      Type: AWS::Elasticsearch::Domain
+      Properties:
+        DomainName: 'jobs'
+        ElasticsearchVersion: '7.1'
+        ElasticsearchClusterConfig:
+          InstanceCount: '1'
+          InstanceType: 't2.small.elasticsearch'
+        EBSOptions:
+          EBSEnabled: 'true'
+          Iops: 0
+          VolumeSize: 10
+          VolumeType: standard
+        AccessPolicies:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                AWS: '*' # !Ref 'AWS::AccountId'
+              Action: 'es:*'
+              Resource: '*'
+
+  Outputs:
+    ESDomain:
+      Description: "ESDomain URL"
+      Value:
+        Fn::GetAtt:
+          - "JobsDatabase"
+          - "DomainEndpoint"
+
+plugins:
+  - serverless-python-requirements
+custom:
+  pythonRequirements:
+    dockerizePip: true
